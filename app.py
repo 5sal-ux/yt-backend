@@ -1,51 +1,45 @@
-from flask import Flask, request, jsonify, redirect
-import yt_dlp
+from flask import Flask, request, jsonify
+from yt_dlp import YoutubeDL
+import yt_dlp.utils
 
 app = Flask(__name__)
 
-@app.route('/search')
-def search():
-    q = request.args.get('q')
-    if not q:
-        return jsonify({ "error": "No query provided" }), 400
+# Updated yt-dlp options
+ytdl_opts = {
+    'format': 'best',
+    'noplaylist': True,
+    'quiet': True,
+    'forcejson': True,
+    'simulate': True,
+    'nocheckcertificate': True,
+    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',  # Spoof browser
+    'geo_bypass': True,  # Optional: bypass region lock
+}
 
-    try:
-        with yt_dlp.YoutubeDL({'quiet': True, 'format': 'bestaudio,best', 'noplaylist': True}) as ydl:
-            info = ydl.extract_info(f"ytsearch1:{q}", download=False)
-            entry = info['entries'][0]
-            return jsonify({
-                "title": entry.get('title'),
-                "url": entry.get('webpage_url')
-            })
-    except Exception as e:
-        return jsonify({ "error": str(e) }), 400
+@app.route('/')
+def home():
+    return 'YouTube Backend API is running!'
 
 @app.route('/stream')
 def stream():
-    video_url = request.args.get('url')
-    if not video_url:
-        return jsonify({ "error": "No URL provided" }), 400
+    url = request.args.get('url')
+    if not url:
+        return jsonify({'error': 'URL is required'}), 400
 
     try:
-        opts = {
-            'quiet': True,
-            'format': 'best[ext=mp4]/best', 
-            'noplaylist': True,
-        }
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            # info['url'] is the direct media URL
+        with YoutubeDL(ytdl_opts) as ydl:
+            info_dict = ydl.extract_info(url, download=False)
             return jsonify({
-                "title": info.get('title'),
-                "stream_url": info['url']
+                'title': info_dict.get('title'),
+                'uploader': info_dict.get('uploader'),
+                'thumbnail': info_dict.get('thumbnail'),
+                'direct_url': info_dict.get('url')  # this is the actual streamable link
             })
-    except yt_dlp.utils.DownloadError as de:
-        return jsonify({ "error": "Download error: " + str(de) }), 400
+
+    except yt_dlp.utils.DownloadError as e:
+        return jsonify({'error': f'Download error: {str(e)}'}), 500
     except Exception as e:
-        return jsonify({ "error": "Unexpected error: " + str(e) }), 500
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    # Render uses $PORT, so fall back to 10000 if not set
-    import os
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(debug=True)
